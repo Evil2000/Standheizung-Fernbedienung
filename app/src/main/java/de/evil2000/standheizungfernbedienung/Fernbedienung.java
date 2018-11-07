@@ -15,8 +15,10 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.ListView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.ToggleButton;
 
@@ -81,7 +83,10 @@ public class Fernbedienung extends Activity {
 
         settings = getSharedPreferences("settings", MODE_PRIVATE);
 
-        EditText txtPhoneNumber = findViewById(R.id.txtPhoneNumber);
+        final Switch swtchUseMqttTransport = findViewById(R.id.swtchUseMqttTransport);
+
+        final EditText txtMqttBrokerUri = findViewById(R.id.txtMqttBrokerUri);
+        final EditText txtPhoneNumber = findViewById(R.id.txtPhoneNumber);
         txtPhoneNumber.setText(settings.getString("receiverPhoneNumber", ""));
         txtPhoneNumber.addTextChangedListener(new PhoneNumberFormattingTextWatcher());
         txtPhoneNumber.setOnFocusChangeListener(new TextView.OnFocusChangeListener() {
@@ -118,6 +123,35 @@ public class Fernbedienung extends Activity {
                 return false;
             }
         });
+
+        swtchUseMqttTransport.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean checked) {
+                if (checked) {
+                    txtPhoneNumber.setVisibility(View.GONE);
+                    findViewById(R.id.lblPhoneNumber).setVisibility(View.GONE);
+                    txtMqttBrokerUri.setVisibility(View.VISIBLE);
+                    findViewById(R.id.lblMqttBrokerUri).setVisibility(View.VISIBLE);
+                } else {
+                    txtPhoneNumber.setVisibility(View.VISIBLE);
+                    findViewById(R.id.lblPhoneNumber).setVisibility(View.VISIBLE);
+                    txtMqttBrokerUri.setVisibility(View.GONE);
+                    findViewById(R.id.lblMqttBrokerUri).setVisibility(View.GONE);
+                }
+            }
+        });
+
+        if (swtchUseMqttTransport.isChecked()) {
+            txtPhoneNumber.setVisibility(View.GONE);
+            findViewById(R.id.lblPhoneNumber).setVisibility(View.GONE);
+            txtMqttBrokerUri.setVisibility(View.VISIBLE);
+            findViewById(R.id.lblMqttBrokerUri).setVisibility(View.VISIBLE);
+        } else {
+            txtPhoneNumber.setVisibility(View.VISIBLE);
+            findViewById(R.id.lblPhoneNumber).setVisibility(View.VISIBLE);
+            txtMqttBrokerUri.setVisibility(View.GONE);
+            findViewById(R.id.lblMqttBrokerUri).setVisibility(View.GONE);
+        }
 
         ToggleButton btnSwitchState = findViewById(R.id.btnSwitchState);
         btnSwitchState.setOnClickListener(new View.OnClickListener() {

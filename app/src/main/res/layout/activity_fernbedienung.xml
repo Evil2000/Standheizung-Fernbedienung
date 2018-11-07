@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     tools:context="de.evil2000.standheizungfernbedienung.Fernbedienung">
 
+    <Switch
+        android:id="@+id/swtchUseMqttTransport"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SMS oder MQTT verwenden:"
+        android:textOff="SMS"
+        android:textOn="MQTT" />
+
     <TextView
+        android:id="@+id/lblPhoneNumber"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Nummer des Empfängers:" />
@@ -19,6 +27,19 @@
         android:ems="10"
         android:hint="+49 151 12345678"
         android:inputType="phone" />
+
+    <TextView
+        android:id="@+id/lblMqttBrokerUri"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="MQTT Broker URI:" />
+
+    <EditText
+        android:id="@+id/txtMqttBrokerUri"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="tcp://broker.hivemq.com:1883"
+        android:inputType="textUri" />
 
     <ToggleButton
         android:id="@+id/btnSwitchState"
