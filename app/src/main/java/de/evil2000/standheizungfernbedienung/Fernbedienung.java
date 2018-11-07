@@ -10,6 +10,7 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.telephony.PhoneNumberFormattingTextWatcher;
 import android.telephony.PhoneNumberUtils;
+import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -21,6 +22,15 @@ import android.widget.ListView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.ToggleButton;
+
+import org.eclipse.paho.android.service.MqttAndroidClient;
+import org.eclipse.paho.client.mqttv3.IMqttActionListener;
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.IMqttToken;
+import org.eclipse.paho.client.mqttv3.MqttCallback;
+import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttException;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -34,6 +44,7 @@ import java.util.Date;
 public class Fernbedienung extends Activity {
     private SharedPreferences settings;
     private StatesAdapter stateLogAdapter;
+    private MQTT mqttClient = null;
     private BroadcastReceiver smsReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -61,20 +72,35 @@ public class Fernbedienung extends Activity {
 
             // TODO:
             // Check if AH is on by parsing the SMS message
-            if (true) {
+            if (messages.getMessageBody().startsWith("AH"))
+                abortBroadcast();
+
+            // Split the SMS message by space and treat the second argument as "command"
+            String command;
+            try {
+                command = messages.getMessageBody().split(" ")[1];
+            } catch (ArrayIndexOutOfBoundsException e) {
+                Log.w(H.thisFunc(getClass()), "SMS message is not in format 'AH (on|off)'! Ignoring.");
+                return;
+            }
+
+            if (command.equals("on")) {
                 StateItem stItm = new StateItem();
-                stItm.setStateString("Standheizung ein");
+                stItm.setStateString(getString(R.string.ah_on));
                 stItm.setState(true);
+                stItm.setTimestamp(new Date(messages.getTimestampMillis()));
                 stateLogAdapter.insert(0, stItm);
-            } else {
+            } else if (command.equals("off")) {
                 StateItem stItm = new StateItem();
-                stItm.setStateString("Standheizung aus");
-                stItm.setState(true);
+                stItm.setStateString(getString(R.string.ah_off));
+                stItm.setState(false);
+                stItm.setTimestamp(new Date(messages.getTimestampMillis()));
                 stateLogAdapter.insert(0, stItm);
             }
             stateLogAdapter.notifyDataSetChanged();
         }
     };
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,9 +110,9 @@ public class Fernbedienung extends Activity {
         settings = getSharedPreferences("settings", MODE_PRIVATE);
 
         final Switch swtchUseMqttTransport = findViewById(R.id.swtchUseMqttTransport);
-
         final EditText txtMqttBrokerUri = findViewById(R.id.txtMqttBrokerUri);
         final EditText txtPhoneNumber = findViewById(R.id.txtPhoneNumber);
+
         txtPhoneNumber.setText(settings.getString("receiverPhoneNumber", ""));
         txtPhoneNumber.addTextChangedListener(new PhoneNumberFormattingTextWatcher());
         txtPhoneNumber.setOnFocusChangeListener(new TextView.OnFocusChangeListener() {
@@ -123,10 +149,32 @@ public class Fernbedienung extends Activity {
                 return false;
             }
         });
-
-        swtchUseMqttTransport.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+        txtMqttBrokerUri.setText(settings.getString("mqttBrokerUri", ""));
+        txtMqttBrokerUri.setOnFocusChangeListener(new TextView.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                if (hasFocus) return;
+                settings.edit().putString("mqttBrokerUri", v.getText().toString()).apply();
+            }
+        });
+        txtMqttBrokerUri.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView view, int actionId, KeyEvent event) {
+                if (actionId == EditorInfo.IME_ACTION_SEARCH ||
+                        actionId == EditorInfo.IME_ACTION_DONE ||
+                        event.getAction() == KeyEvent.ACTION_DOWN &&
+                                event.getKeyCode() == KeyEvent.KEYCODE_ENTER) {
+                    // the user is done typing and clicked "Done"
+                    settings.edit().putString("mqttBrokerUri", view.getText().toString()).apply();
+                    return true; // consume.
+                }
+                return false;
+            }
+        });
+        CompoundButton.OnCheckedChangeListener l = new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton compoundButton, boolean checked) {
+                settings.edit().putBoolean("useMqttTransport",checked).apply();
                 if (checked) {
                     txtPhoneNumber.setVisibility(View.GONE);
                     findViewById(R.id.lblPhoneNumber).setVisibility(View.GONE);
@@ -139,33 +187,35 @@ public class Fernbedienung extends Activity {
                     findViewById(R.id.lblMqttBrokerUri).setVisibility(View.GONE);
                 }
             }
-        });
-
-        if (swtchUseMqttTransport.isChecked()) {
-            txtPhoneNumber.setVisibility(View.GONE);
-            findViewById(R.id.lblPhoneNumber).setVisibility(View.GONE);
-            txtMqttBrokerUri.setVisibility(View.VISIBLE);
-            findViewById(R.id.lblMqttBrokerUri).setVisibility(View.VISIBLE);
-        } else {
-            txtPhoneNumber.setVisibility(View.VISIBLE);
-            findViewById(R.id.lblPhoneNumber).setVisibility(View.VISIBLE);
-            txtMqttBrokerUri.setVisibility(View.GONE);
-            findViewById(R.id.lblMqttBrokerUri).setVisibility(View.GONE);
-        }
+        };
+        swtchUseMqttTransport.setOnCheckedChangeListener(l);
+        swtchUseMqttTransport.setChecked(settings.getBoolean("useMqttTransport",false));
+        l.onCheckedChanged(swtchUseMqttTransport,settings.getBoolean("useMqttTransport",false));
 
         ToggleButton btnSwitchState = findViewById(R.id.btnSwitchState);
+        btnSwitchState.setText(getString(R.string.ah_off));
+        btnSwitchState.setTextOn(getString(R.string.ah_on));
+        btnSwitchState.setTextOff(getString(R.string.ah_off));
+
         btnSwitchState.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 ToggleButton btn = (ToggleButton) view;
                 if (btn.isChecked()) {
-                    // Todo:
-                    // Send SMS AH on and register new StateItem AFTER confirmation SMS is received
-
+                    if (!sendSms("AH on app"))
+                        btn.setChecked(false);
                 } else {
-                    // Todo:
-                    // Send SMS AH off and register new StateItem AFTER confirmation SMS is received
+                    if(!sendSms("AH off app"))
+                        btn.setChecked(false);
+                }
+                if (settings.getBoolean("useMqttTransport",false)){
+                    if (mqttClient == null)
+                        mqttClient = new MQTT(getApplicationContext(),settings.getString("mqttBrokerUri",""),"/AH/tx","/AH/rx",new MQTT.OnMessageRecievedHandler() {
+                            @Override
+                            public void onMessageRecieved (MqttMessage message) {
 
+                            }
+                        });
                 }
             }
         });
@@ -183,16 +233,28 @@ public class Fernbedienung extends Activity {
 
         if (stateLogAdapter.getCount() > 0) {
             StateItem lastState = stateLogAdapter.getItem(0);
-            Date thirtyMinutesBeforeNow = new Date((new Date()).getTime() - 30 * 60 * 1000); // 30 Minutes
-            if (lastState.getState() == true && lastState.getTimestamp().after(thirtyMinutesBeforeNow)) {
-                btnSwitchState.setChecked(true);
+            Date thirtyMinutesAfterLastState = new Date(lastState.getTimestamp().getTime() + 30 * 60 * 1000); // 30 Minutes
+            //Date thirtyMinutesBeforeNow = new Date((new Date()).getTime() - 30 * 60 * 1000); // 30 Minutes
+            if (lastState.getState() == true) {
+                if ((new Date()).before(thirtyMinutesAfterLastState)) {
+                    btnSwitchState.setChecked(true);
+                } else {
+                    // Zeit abgelaufen
+                    btnSwitchState.setChecked(false);
+                    StateItem stItm = new StateItem();
+                    stItm.setStateString(getString(R.string.ah_off));
+                    stItm.setState(false);
+                    stItm.setTimestamp(thirtyMinutesAfterLastState);
+                    stateLogAdapter.insert(0, stItm);
+                    stateLogAdapter.notifyDataSetChanged();
+                }
             }
         }
 
         IntentFilter mIntentFilter = new IntentFilter();
         mIntentFilter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
         mIntentFilter.addAction("android.provider.Telephony.SMS_RECEIVED");
-        registerReceiver(smsReceiver,mIntentFilter);
+        registerReceiver(smsReceiver, mIntentFilter);
     }
 
     @Override
@@ -209,6 +271,7 @@ public class Fernbedienung extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         writeStatesToFile();
+        unregisterReceiver(smsReceiver);
     }
 
     private void writeStatesToFile() {
@@ -244,5 +307,133 @@ public class Fernbedienung extends Activity {
             } catch (ClassNotFoundException e) {
                 e.printStackTrace();
             }
+    }
+
+    /**
+     * Send a SMS message to the trusted sender.
+     *
+     * @param message The message to send.
+     */
+    private boolean sendSms(String message) {
+        return sendSms(settings.getString("receiverPhoneNumber", ""), message);
+    }
+
+    /**
+     * Send a SMS message to a number.
+     *
+     * @param toNumber Receiver of the SMS message
+     * @param message  The message to send.
+     */
+    private boolean sendSms(String toNumber, String message) {
+        if (toNumber == null || toNumber.isEmpty())
+            return false;
+        SmsManager smsMgr = SmsManager.getDefault();
+        smsMgr.sendTextMessage(toNumber, null, message, null, null);
+        return true;
+    }
+
+    private void sendMqttMessage(String message){
+
+    }
+
+    public static class MQTT implements MqttCallback {
+        private String clientId = null;
+        private String brokerURI = "";
+        private MqttAndroidClient mqttClient;
+        private String topic_rx = "";
+        private String topic_tx = "";
+        public static class OnMessageRecievedHandler {
+            public void onMessageRecieved (MqttMessage message) {
+
+            }
+        }
+        private OnMessageRecievedHandler handleMqtt;
+
+        public MQTT (Context context, String brokerURI, String topic_rx, String topic_tx, OnMessageRecievedHandler onMessageRecievedHandler) {
+            if (brokerURI.isEmpty() || topic_rx.isEmpty() || topic_tx.isEmpty())
+                throw new IllegalStateException("No MQTT broker URI is set.");
+
+            this.topic_rx = topic_rx;
+            this.topic_tx = topic_tx;
+            this.handleMqtt = onMessageRecievedHandler;
+
+            mqttClient = new MqttAndroidClient(context, brokerURI, getClientId());
+            mqttClient.setCallback(this);
+
+            if (!isAlreadyConnected()) {
+                try {
+                    mqttClient.connect();
+                } catch (MqttException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        //@Override
+        public void connectComplete(boolean isReconnect, String serverURI) {
+            Log.d(H.thisFunc(getClass()), "isReconnect=" + isReconnect + " serverURI=" + serverURI);
+            if (serverURI.equals(brokerURI)) {
+                try {
+                    IMqttToken res = mqttClient.subscribe(topic_rx, 0);
+                    res.setActionCallback(new IMqttActionListener() {
+                        @Override
+                        public void onSuccess(IMqttToken token) {
+                            Log.d("IMqttActionListener", "Subscription complete.");
+                        }
+
+                        @Override
+                        public void onFailure(IMqttToken iMqttToken, Throwable cause) {
+                            Log.d("IMqttActionListener", "Subscription failed. cause=" + cause.toString());
+                        }
+                    });
+                } catch (MqttException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        @Override
+        public void connectionLost(Throwable cause) {
+            Log.d(H.thisFunc(getClass()), "cause=" + (cause != null ? cause.toString() : "null"));
+        }
+
+        @Override
+        public void messageArrived(String topic, MqttMessage message) throws Exception {
+            Log.d(H.thisFunc(getClass()), "topic=" + topic + " message=" + message.toString());
+            handleMqtt.onMessageRecieved(message);
+        }
+
+        @Override
+        public void deliveryComplete(IMqttDeliveryToken token) {
+            Log.d(H.thisFunc(getClass()), "token=" + token.toString());
+        }
+
+        public void sendMessage(String message) {
+            if (!isAlreadyConnected()) return;
+            try {
+                mqttClient.publish(topic_tx,message.getBytes(),0,false);
+            } catch (MqttException e) {
+                e.printStackTrace();
+            }
+        }
+
+        /*
+         * Checks if the MQTT client thinks it has an active connection
+         */
+        private boolean isAlreadyConnected() {
+            return ((mqttClient != null) && mqttClient.isConnected());
+        }
+
+        private String getClientId() {
+            if (clientId != null)
+                return clientId;
+            clientId = settings.getString("mqttClientId", "");
+            if (!clientId.isEmpty())
+                return clientId;
+            clientId = MqttClient.generateClientId();
+            settings.edit().putString("mqttClientId", clientId).apply();
+            Log.d(H.thisFunc(getClass()), "mqttClientId=" + clientId);
+            return clientId;
+        }
     }
 }

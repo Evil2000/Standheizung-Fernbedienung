@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Fernbedienung Standheizung</string>
+    <string name="ah_on">Standheizung ein</string>
+    <string name="ah_off">Standheizung aus</string>
+    <string name="turn_ah_on">Standheizung einschalten</string>
+    <string name="turn_ah_off">Standheizung ausschalten</string>
+    <string name="turn_ah_on_in_progress">Standheitung wird eingeschaltet...</string>
+    <string name="turn_ah_off_in_progress">Standheitung wird ausgeschaltet...</string>
+    <string name="number_of_receiver">Nummer des Empfängers:</string>
+    <string name="use_sms_or_mqtt">SMS oder MQTT verwenden:</string>
+    <string name="sms">SMS</string>
+    <string name="mqtt">MQTT</string>
+    <string name="mqtt_broker_uri">MQTT Broker URI:</string>
+</resources>

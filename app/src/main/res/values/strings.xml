@@ -1,3 +1,14 @@
 <resources>
-    <string name="app_name">Standheizung Fernbedienung</string>
+    <string name="app_name">Remote auxiliary heating</string>
+    <string name="ah_on">Auxiliary heating on</string>
+    <string name="ah_off">Auxiliary heating off</string>
+    <string name="turn_ah_on">Turn auxiliary heating on</string>
+    <string name="turn_ah_off">Turn auxiliary heating off</string>
+    <string name="turn_ah_on_in_progress">Turning auxiliary heating on...</string>
+    <string name="turn_ah_off_in_progress">Turning auxiliary heating off..</string>
+    <string name="number_of_receiver">Number of receiver:</string>
+    <string name="use_sms_or_mqtt">Use SMS or MQTT:</string>
+    <string name="sms">SMS</string>
+    <string name="mqtt">MQTT</string>
+    <string name="mqtt_broker_uri">MQTT broker URI:</string>
 </resources>

@@ -38,18 +38,19 @@ public class StateItem implements Serializable {
         return timestamp;
     }
 
+    public void setTimestamp(Date timestamp) {
+        this.timestamp = timestamp;
+    }
+
     public String getFormatedTimestamp() {
         return getFormatedTimestamp(defaultDateFormat);
     }
+
     public String getFormatedTimestamp(String format) {
         if (format == null || format.isEmpty())
             format = defaultDateFormat;
         SimpleDateFormat sdf = new SimpleDateFormat(format);
         return sdf.format(timestamp);
-    }
-
-    public void setTimestamp(Date timestamp) {
-        this.timestamp = timestamp;
     }
 
     public boolean getState() {

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -10,15 +11,15 @@
         android:id="@+id/swtchUseMqttTransport"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="SMS oder MQTT verwenden:"
-        android:textOff="SMS"
-        android:textOn="MQTT" />
+        android:text="@string/use_sms_or_mqtt"
+        android:textOff="@string/sms"
+        android:textOn="@string/mqtt" />
 
     <TextView
         android:id="@+id/lblPhoneNumber"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Nummer des Empfängers:" />
+        android:text="@string/number_of_receiver" />
 
     <EditText
         android:id="@+id/txtPhoneNumber"
@@ -32,7 +33,7 @@
         android:id="@+id/lblMqttBrokerUri"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="MQTT Broker URI:" />
+        android:text="@string/mqtt_broker_uri" />
 
     <EditText
         android:id="@+id/txtMqttBrokerUri"
@@ -46,9 +47,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:checked="false"
-        android:text="Zustand"
-        android:textOff="Aus"
-        android:textOn="Ein" />
+        android:text="@string/ah_off" />
 
     <ListView
         android:id="@+id/lstStateLog"
