@@ -16,8 +16,8 @@ public class H {
         for (StackTraceElement e : ste) {
             if (c.getCanonicalName().equals(e.getClassName())) {
                 //return e.getMethodName();
-                return e.getClassName() + "." + e.getMethodName() + "(" + e.getFileName() + ":" +
-                        e.getLineNumber() + ")";
+                //return e.getClassName() + "." + e.getMethodName() + "(" + e.getFileName() + ":" +                        e.getLineNumber                        () + ")";
+                return e.getMethodName() + "(" + e.getFileName() + ":" + e.getLineNumber() + ")";
             }
             //Log.d("__FUNC__()", e.getClassName() + " " + e.getMethodName() + " (" + e.getFileName() + ":" + e.getLineNumber() + ")");
         }

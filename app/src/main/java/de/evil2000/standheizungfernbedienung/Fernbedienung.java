@@ -12,6 +12,8 @@ import android.telephony.PhoneNumberFormattingTextWatcher;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
@@ -27,7 +29,7 @@ import org.eclipse.paho.android.service.MqttAndroidClient;
 import org.eclipse.paho.client.mqttv3.IMqttActionListener;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.IMqttToken;
-import org.eclipse.paho.client.mqttv3.MqttCallback;
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
@@ -40,11 +42,14 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutput;
 import java.io.ObjectOutputStream;
 import java.util.Date;
+import java.util.LinkedList;
 
 public class Fernbedienung extends Activity {
     private SharedPreferences settings;
     private StatesAdapter stateLogAdapter;
-    private MQTT mqttClient = null;
+    private MqttAndroidClient mqttClient = null;
+    private String mqttClientId;
+    private LinkedList<String> mqttMessageQ = null;
     private BroadcastReceiver smsReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -101,7 +106,6 @@ public class Fernbedienung extends Activity {
         }
     };
 
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -118,7 +122,8 @@ public class Fernbedienung extends Activity {
         txtPhoneNumber.setOnFocusChangeListener(new TextView.OnFocusChangeListener() {
             @Override
             public void onFocusChange(View v, boolean hasFocus) {
-                if (hasFocus) return;
+                if (hasFocus)
+                    return;
                 TextView view = (TextView) v;
                 String number = view.getText().toString().replace(" ", "");
                 if (!PhoneNumberUtils.isGlobalPhoneNumber(number)) {
@@ -150,11 +155,29 @@ public class Fernbedienung extends Activity {
             }
         });
         txtMqttBrokerUri.setText(settings.getString("mqttBrokerUri", ""));
+        txtPhoneNumber.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+
+            }
+
+            @Override
+            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+                Log.d(H.thisFunc(getClass()), "editable=" + charSequence.toString());
+            }
+
+            @Override
+            public void afterTextChanged(Editable editable) {
+
+            }
+        });
         txtMqttBrokerUri.setOnFocusChangeListener(new TextView.OnFocusChangeListener() {
             @Override
             public void onFocusChange(View v, boolean hasFocus) {
-                if (hasFocus) return;
-                settings.edit().putString("mqttBrokerUri", v.getText().toString()).apply();
+                if (hasFocus)
+                    return;
+                settings.edit().putString("mqttBrokerUri", ((TextView) v).getText().toString())
+                        .apply();
             }
         });
         txtMqttBrokerUri.setOnEditorActionListener(new TextView.OnEditorActionListener() {
@@ -174,7 +197,7 @@ public class Fernbedienung extends Activity {
         CompoundButton.OnCheckedChangeListener l = new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton compoundButton, boolean checked) {
-                settings.edit().putBoolean("useMqttTransport",checked).apply();
+                settings.edit().putBoolean("useMqttTransport", checked).apply();
                 if (checked) {
                     txtPhoneNumber.setVisibility(View.GONE);
                     findViewById(R.id.lblPhoneNumber).setVisibility(View.GONE);
@@ -189,8 +212,8 @@ public class Fernbedienung extends Activity {
             }
         };
         swtchUseMqttTransport.setOnCheckedChangeListener(l);
-        swtchUseMqttTransport.setChecked(settings.getBoolean("useMqttTransport",false));
-        l.onCheckedChanged(swtchUseMqttTransport,settings.getBoolean("useMqttTransport",false));
+        swtchUseMqttTransport.setChecked(settings.getBoolean("useMqttTransport", false));
+        l.onCheckedChanged(swtchUseMqttTransport, settings.getBoolean("useMqttTransport", false));
 
         ToggleButton btnSwitchState = findViewById(R.id.btnSwitchState);
         btnSwitchState.setText(getString(R.string.ah_off));
@@ -201,21 +224,12 @@ public class Fernbedienung extends Activity {
             @Override
             public void onClick(View view) {
                 ToggleButton btn = (ToggleButton) view;
-                if (btn.isChecked()) {
-                    if (!sendSms("AH on app"))
-                        btn.setChecked(false);
+                String cmd = (btn.isChecked() ? "on" : "off") + " app";
+                if (settings.getBoolean("useMqttTransport", false)) {
+                    sendMqttMessage(cmd);
                 } else {
-                    if(!sendSms("AH off app"))
+                    if (!sendSms("AH " + cmd))
                         btn.setChecked(false);
-                }
-                if (settings.getBoolean("useMqttTransport",false)){
-                    if (mqttClient == null)
-                        mqttClient = new MQTT(getApplicationContext(),settings.getString("mqttBrokerUri",""),"/AH/tx","/AH/rx",new MQTT.OnMessageRecievedHandler() {
-                            @Override
-                            public void onMessageRecieved (MqttMessage message) {
-
-                            }
-                        });
                 }
             }
         });
@@ -260,18 +274,29 @@ public class Fernbedienung extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        Log.d(H.thisFunc(getClass()), "===");
+        connectMqtt();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        Log.d(H.thisFunc(getClass()), "===");
+        try {
+            mqttClient.unsubscribe("/AH/from");
+            mqttClient.disconnect();
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        Log.d(H.thisFunc(getClass()), "===");
         writeStatesToFile();
         unregisterReceiver(smsReceiver);
+        mqttClient.unregisterResources();
     }
 
     private void writeStatesToFile() {
@@ -332,108 +357,115 @@ public class Fernbedienung extends Activity {
         return true;
     }
 
-    private void sendMqttMessage(String message){
-
+    private void sendMqttMessage(String message) {
+        connectMqtt();
+        mqttMessageQ.add(message);
+        peakMqttMessageQ();
     }
 
-    public static class MQTT implements MqttCallback {
-        private String clientId = null;
-        private String brokerURI = "";
-        private MqttAndroidClient mqttClient;
-        private String topic_rx = "";
-        private String topic_tx = "";
-        public static class OnMessageRecievedHandler {
-            public void onMessageRecieved (MqttMessage message) {
-
-            }
+    private void connectMqtt() {
+        final String brokerUri = settings.getString("mqttBrokerUri", "");
+        if (isAlreadyConnected()) {
+            return;
         }
-        private OnMessageRecievedHandler handleMqtt;
+        mqttMessageQ = new LinkedList<>();
+        if (brokerUri.isEmpty()) {
+            //txtMqttBrokerUri.setBackgroundColor();
+            return;
+        }
+        mqttClient = new MqttAndroidClient(getBaseContext(), brokerUri, getClientId());
+        mqttClient.setCallback(new MqttCallbackExtended() {
+            @Override
+            public void connectComplete(boolean isReconnect, String serverURI) {
+                Log.d("connectComplete", "isReconnect=" + isReconnect + " serverURI=" + serverURI);
+                if (serverURI.equals(brokerUri)) {
+                    try {
+                        IMqttToken res = mqttClient.subscribe("/AH/from", 0);
+                        res.setActionCallback(new IMqttActionListener() {
+                            @Override
+                            public void onSuccess(IMqttToken token) {
+                                Log.d("IMqttActionListener", "Subscription complete.");
+                            }
 
-        public MQTT (Context context, String brokerURI, String topic_rx, String topic_tx, OnMessageRecievedHandler onMessageRecievedHandler) {
-            if (brokerURI.isEmpty() || topic_rx.isEmpty() || topic_tx.isEmpty())
-                throw new IllegalStateException("No MQTT broker URI is set.");
-
-            this.topic_rx = topic_rx;
-            this.topic_tx = topic_tx;
-            this.handleMqtt = onMessageRecievedHandler;
-
-            mqttClient = new MqttAndroidClient(context, brokerURI, getClientId());
-            mqttClient.setCallback(this);
-
-            if (!isAlreadyConnected()) {
-                try {
-                    mqttClient.connect();
-                } catch (MqttException e) {
-                    e.printStackTrace();
+                            @Override
+                            public void onFailure(IMqttToken iMqttToken, Throwable cause) {
+                                Log.d("IMqttActionListener", "Subscription failed. cause=" + cause.toString());
+                            }
+                        });
+                    } catch (MqttException e) {
+                        e.printStackTrace();
+                    }
                 }
+                peakMqttMessageQ();
             }
-        }
 
-        //@Override
-        public void connectComplete(boolean isReconnect, String serverURI) {
-            Log.d(H.thisFunc(getClass()), "isReconnect=" + isReconnect + " serverURI=" + serverURI);
-            if (serverURI.equals(brokerURI)) {
-                try {
-                    IMqttToken res = mqttClient.subscribe(topic_rx, 0);
-                    res.setActionCallback(new IMqttActionListener() {
-                        @Override
-                        public void onSuccess(IMqttToken token) {
-                            Log.d("IMqttActionListener", "Subscription complete.");
-                        }
+            @Override
+            public void connectionLost(Throwable cause) {
+                Log.d("connectionLost", "cause=" + (cause != null ? cause.toString() : "null"));
+            }
 
-                        @Override
-                        public void onFailure(IMqttToken iMqttToken, Throwable cause) {
-                            Log.d("IMqttActionListener", "Subscription failed. cause=" + cause.toString());
-                        }
-                    });
-                } catch (MqttException e) {
-                    e.printStackTrace();
+            @Override
+            public void messageArrived(String topic, MqttMessage mqttMessage) throws Exception {
+                Log.d("messageArrived", "topic=" + topic + " message=" + mqttMessage.toString());
+                if (mqttMessage.toString().equals("on")) {
+                    StateItem stItm = new StateItem();
+                    stItm.setStateString(getString(R.string.ah_on));
+                    stItm.setState(true);
+                    stItm.setTimestamp(new Date());
+                    stateLogAdapter.insert(0, stItm);
+                    ((ToggleButton) findViewById(R.id.btnSwitchState)).setChecked(true);
+                } else if (mqttMessage.toString().equals("off")) {
+                    StateItem stItm = new StateItem();
+                    stItm.setStateString(getString(R.string.ah_off));
+                    stItm.setState(false);
+                    stItm.setTimestamp(new Date());
+                    stateLogAdapter.insert(0, stItm);
+                    ((ToggleButton) findViewById(R.id.btnSwitchState)).setChecked(false);
+                } else {
+                    StateItem stItm = new StateItem();
+                    stItm.setStateString(mqttMessage.toString());
+                    stItm.setState(false);
+                    stItm.setTimestamp(new Date());
+                    stateLogAdapter.insert(0, stItm);
+                    ((ToggleButton) findViewById(R.id.btnSwitchState)).setChecked(false);
                 }
+                stateLogAdapter.notifyDataSetChanged();
             }
-        }
 
-        @Override
-        public void connectionLost(Throwable cause) {
-            Log.d(H.thisFunc(getClass()), "cause=" + (cause != null ? cause.toString() : "null"));
-        }
-
-        @Override
-        public void messageArrived(String topic, MqttMessage message) throws Exception {
-            Log.d(H.thisFunc(getClass()), "topic=" + topic + " message=" + message.toString());
-            handleMqtt.onMessageRecieved(message);
-        }
-
-        @Override
-        public void deliveryComplete(IMqttDeliveryToken token) {
-            Log.d(H.thisFunc(getClass()), "token=" + token.toString());
-        }
-
-        public void sendMessage(String message) {
-            if (!isAlreadyConnected()) return;
-            try {
-                mqttClient.publish(topic_tx,message.getBytes(),0,false);
-            } catch (MqttException e) {
-                e.printStackTrace();
+            @Override
+            public void deliveryComplete(IMqttDeliveryToken token) {
+                Log.d("deliveryComplete", "token=" + token.toString());
             }
-        }
-
-        /*
-         * Checks if the MQTT client thinks it has an active connection
-         */
-        private boolean isAlreadyConnected() {
-            return ((mqttClient != null) && mqttClient.isConnected());
-        }
-
-        private String getClientId() {
-            if (clientId != null)
-                return clientId;
-            clientId = settings.getString("mqttClientId", "");
-            if (!clientId.isEmpty())
-                return clientId;
-            clientId = MqttClient.generateClientId();
-            settings.edit().putString("mqttClientId", clientId).apply();
-            Log.d(H.thisFunc(getClass()), "mqttClientId=" + clientId);
-            return clientId;
+        });
+        try {
+            mqttClient.connect();
+        } catch (MqttException e) {
+            e.printStackTrace();
         }
     }
+
+    private synchronized void peakMqttMessageQ() {
+        if (!isAlreadyConnected()) {
+            return;
+        }
+        try {
+            while (mqttMessageQ.size() > 0)
+                mqttClient.publish("/AH/to", mqttMessageQ.poll().getBytes(), 0, false);
+        } catch (MqttException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private boolean isAlreadyConnected() {
+        return ((mqttClient != null) && mqttClient.isConnected());
+    }
+
+    private String getClientId() {
+        if (mqttClientId != null)
+            return mqttClientId;
+        mqttClientId = MqttClient.generateClientId();
+        Log.d(H.thisFunc(getClass()), "mqttClientId=" + mqttClientId);
+        return mqttClientId;
+    }
+
 }
